@@ -1,0 +1,14 @@
+<configure
+  xmlns="http://namespaces.zope.org/zope"
+  xmlns:browser="http://namespaces.zope.org/browser"
+  i18n_domain="eea">
+
+  <browser:page
+    name="genai-controlpanel"
+    for="Products.CMFPlone.interfaces.IPloneSiteRoot"
+    permission="eea.genai.manage"
+    class=".controlpanel.GenAIControlPanelFormWrapper"
+    layer="eea.genai.core.interfaces.IEEAGenAICoreLayer"
+  />
+
+</configure>

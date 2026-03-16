@@ -1,0 +1,27 @@
+<configure xmlns="http://namespaces.zope.org/meta"
+    i18n_domain="eea">
+
+    <directives namespace="http://namespaces.eea.europa.eu/genai">
+        <directive
+            name="agentTool"
+            handler=".metaconfigure.agentToolDirective"
+            schema=".metaconfigure.IAgentToolDirective"
+        />
+        <directive
+            name="agentContextProvider"
+            handler=".metaconfigure.agentContextProviderDirective"
+            schema=".metaconfigure.IAgentContextProviderDirective"
+        />
+        <directive
+            name="agentSkill"
+            handler=".metaconfigure.agentSkillDirective"
+            schema=".metaconfigure.IAgentSkillDirective"
+        />
+        <directive
+            name="agent"
+            handler=".metaconfigure.agentDirective"
+            schema=".metaconfigure.IAgentDirective"
+        />
+    </directives>
+
+</configure>

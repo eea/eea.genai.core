@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<layers>
+  <layer name="eea.genai.core" interface="eea.genai.core.interfaces.IEEAGenAICoreLayer" />
+</layers>

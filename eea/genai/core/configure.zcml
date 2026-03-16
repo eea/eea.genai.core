@@ -1,0 +1,23 @@
+<configure xmlns="http://namespaces.zope.org/zope"
+    xmlns:i18n="http://namespaces.zope.org/i18n"
+    xmlns:genai="http://namespaces.eea.europa.eu/genai"
+    i18n_domain="eea">
+
+    <include file="meta.zcml" />
+    <include file="profiles.zcml" />
+    <include file="permissions.zcml" />
+    <include package=".browser" />
+    <include package=".restapi" />
+    <include package=".upgrades" />
+
+    <utility
+        factory=".client.PydanticAIClient"
+        provides=".interfaces.ILLMClient"
+    />
+
+    <utility
+        factory=".agent.PydanticAIAgentExecutor"
+        provides=".interfaces.IAgentExecutor"
+    />
+
+</configure>

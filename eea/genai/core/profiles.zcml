@@ -1,0 +1,23 @@
+<configure xmlns="http://namespaces.zope.org/zope"
+    xmlns:genericsetup="http://namespaces.zope.org/genericsetup"
+    xmlns:five="http://namespaces.zope.org/five" i18n_domain="eea">
+
+    <five:registerPackage package="." initialize=".initialize" />
+
+    <genericsetup:registerProfile
+        name="default"
+        title="eea.genai.core"
+        directory="profiles/default"
+        description="Installs the eea.genai.core add-on."
+        provides="Products.GenericSetup.interfaces.EXTENSION"
+    />
+
+    <genericsetup:registerProfile
+        name="uninstall"
+        title="eea.genai.core (uninstall)"
+        directory="profiles/uninstall"
+        description="Uninstalls the eea.genai.core add-on."
+        provides="Products.GenericSetup.interfaces.EXTENSION"
+    />
+
+</configure>
