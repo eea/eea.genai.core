@@ -62,15 +62,10 @@ def get_mcp_servers_config() -> dict:
     settings = _get_registry_settings()
     if settings is None:
         return {}
-    raw = (getattr(settings, "mcp_servers_json", "") or "{}").strip()
-    if not raw:
+    mcp_servers = getattr(settings, "mcp_servers_json", {})
+    if not mcp_servers:
         return {}
-    try:
-        data = json.loads(raw)
-    except Exception:
-        logger.warning("Invalid mcp_servers_json; ignoring.")
-        return {}
-    return data if isinstance(data, dict) else {}
+    return mcp_servers if isinstance(mcp_servers, dict) else {}
 
 
 def get_agents_config() -> list[dict]:
@@ -144,13 +139,7 @@ def _get_registry_agents() -> list[dict]:
     settings = _get_registry_settings()
     if settings is None:
         return []
-    raw = getattr(settings, "agents_json", "") or "[]"
-    raw = raw.strip()
-    if not raw:
+    agents = getattr(settings, "agents_json", [])
+    if not agents:
         return []
-    try:
-        data = json.loads(raw)
-    except Exception:
-        logger.warning("Invalid agents_json; ignoring.")
-        return []
-    return data if isinstance(data, list) else []
+    return agents if isinstance(agents, list) else []

@@ -1,13 +1,80 @@
 """Interfaces for eea.genai.core"""
 
+import json
 import functools
 
 from zope import schema
+from plone.schema import JSONField
 from zope.component.hooks import setSite
 from zope.interface import Attribute, Interface, implementer
 from zope.publisher.interfaces.browser import IDefaultBrowserLayer
 
 from eea.genai.core import EEAMessageFactory as _
+
+
+agents_schema = json.dumps({
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+            "name": {"type": "string"},
+            "system_prompt": {"type": "string"},
+            "task_prompt": {"type": "string"},
+            "context_providers": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "skills": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "tools": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "mcp_servers": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "output_type": {"type": "string"},
+            "max_iterations": {"type": "integer", "minimum": 1, "default": 10},
+        },
+    },
+})
+
+mcp_servers_schema = json.dumps({
+    "type": "object",
+    "additionalProperties": {
+        "type": "object",
+        "oneOf": [
+            {
+                "required": ["command"],
+                "properties": {
+                    "command": {"type": "string"},
+                    "args": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "env": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                },
+            },
+            {
+                "required": ["url"],
+                "properties": {
+                    "url": {"type": "string"},
+                    "headers": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                },
+            },
+        ],
+    },
+})
 
 
 class IEEAGenAICoreLayer(IDefaultBrowserLayer):
@@ -88,19 +155,21 @@ class IGenAISettings(Interface):
         required=False,
     )
 
-    agents_json = schema.Text(
+    agents_json = JSONField(
         title=_("Agents Configuration (JSON)"),
+        schema=agents_schema,
         description=_(
             "JSON array of agent definitions. Each agent defines system_prompt, tools, skills, etc.\n"
             "Example: [{\"name\": \"summarizer\", \"system_prompt\": \"You are...\", "
             "\"skills\": [\"metadata_extraction\"], \"tools\": [\"extract_blocks\"]}]"
         ),
-        default="[]",
+        default=[],
         required=False,
     )
 
-    mcp_servers_json = schema.Text(
+    mcp_servers_json = JSONField(
         title=_("MCP Servers Configuration (JSON)"),
+        schema=mcp_servers_schema,
         description=_(
             'JSON object of MCP server definitions. Keys are server names. '
             'Each value has either "command"+"args" (stdio) or "url" (HTTP). '
@@ -108,7 +177,7 @@ class IGenAISettings(Interface):
             'Example: {"filesystem": {"command": "npx", '
             '"args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"]}}'
         ),
-        default="{}",
+        default={},
         required=False,
     )
 
