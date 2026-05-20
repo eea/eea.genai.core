@@ -58,7 +58,9 @@ def get_executor() -> IAgentExecutor:
     return executor
 
 
-def batch_get_utilities(interface, names: Iterable[str] | None = None) -> dict[str, Any]:
+def batch_get_utilities(
+    interface, names: Iterable[str] | None = None
+) -> dict[str, Any]:
     """Return all named utilities for `interface` as a dict in one ZCA pass.
 
     If `names` is given, restrict the result to those names (preserves their order

@@ -62,6 +62,7 @@ def agentDirective(_context, name, class_):
 
 # --- Agent context provider directive ---
 
+
 class IAgentContextProviderDirective(Interface):
     """Schema for the <genai:agentContextProvider> ZCML directive."""
 
@@ -96,6 +97,7 @@ def agentContextProviderDirective(_context, name, class_):
 
 # --- Agent skill directive ---
 
+
 class IAgentSkillDirective(Interface):
     """Schema for the <genai:agentSkill> ZCML directive."""
 
@@ -129,6 +131,7 @@ def agentSkillDirective(_context, name, class_):
 
 
 # --- Agent tool directive ---
+
 
 class IAgentToolDirective(Interface):
     """Schema for the <genai:agentTool> ZCML directive."""

@@ -139,7 +139,10 @@ class PydanticAIAgentExecutor:
         return result.output
 
     def run_with_agent(
-        self, agent_name: str, user_prompt: str | None = None, deps: Any = None,
+        self,
+        agent_name: str,
+        user_prompt: str | None = None,
+        deps: Any = None,
     ) -> Any:
         """Resolve agent config by name, enrich prompts, execute."""
         config = get_agent_config(agent_name)
@@ -152,7 +155,9 @@ class PydanticAIAgentExecutor:
         global_prompt = get_global_system_rules()
         if global_prompt:
             system_prompt = (
-                f"{global_prompt}\n\n{system_prompt}" if system_prompt else global_prompt
+                f"{global_prompt}\n\n{system_prompt}"
+                if system_prompt
+                else global_prompt
             )
 
         all_tools = config.get("tools") or []
@@ -169,7 +174,9 @@ class PydanticAIAgentExecutor:
         if enrichers or tool_utils:
             logger.debug(
                 "Applied %d enrichers + %d tools to agent '%s'",
-                len(enrichers), len(tool_utils), agent_name,
+                len(enrichers),
+                len(tool_utils),
+                agent_name,
             )
 
         final_system, final_user = build_prompts(
@@ -223,7 +230,5 @@ class PydanticAIAgentExecutor:
         if filtered_refs:
             toolsets.extend(build_filtered_mcp_servers(filtered_refs, mcp_config))
         if unfiltered_servers:
-            toolsets.extend(
-                build_mcp_servers(list(unfiltered_servers), mcp_config)
-            )
+            toolsets.extend(build_mcp_servers(list(unfiltered_servers), mcp_config))
         return toolsets
