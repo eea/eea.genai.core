@@ -38,7 +38,6 @@ class _Raising:
 
 
 class TestCollectEnricherPrompts(unittest.TestCase):
-
     def test_collects_named_system_and_flat_user(self):
         es = [
             _Stub("a", system="SA", user="UA"),
@@ -68,7 +67,6 @@ class TestCollectEnricherPrompts(unittest.TestCase):
 
 
 class TestBuildPrompts(unittest.TestCase):
-
     def test_full_composition(self):
         enrichers = [_Stub("meta", user="title: x"), _Stub("rules", system="be brief")]
         system, user = build_prompts(
@@ -91,8 +89,11 @@ class TestBuildPrompts(unittest.TestCase):
 
     def test_no_enrichers_no_section(self):
         system, user = build_prompts(
-            system_prompt="S", task_prompt="T", user_prompt="U",
-            enrichers=(), tools=(),
+            system_prompt="S",
+            task_prompt="T",
+            user_prompt="U",
+            enrichers=(),
+            tools=(),
         )
         self.assertNotIn("## ENRICHERS", system)
         self.assertNotIn("## CONTEXT", user)
@@ -102,8 +103,11 @@ class TestBuildPrompts(unittest.TestCase):
 
     def test_only_user_prompt(self):
         system, user = build_prompts(
-            system_prompt="", task_prompt="", user_prompt="hello",
-            enrichers=(), tools=(),
+            system_prompt="",
+            task_prompt="",
+            user_prompt="hello",
+            enrichers=(),
+            tools=(),
         )
         self.assertEqual(system, "")
         self.assertIn("hello", user)
@@ -113,9 +117,13 @@ class TestBuildPrompts(unittest.TestCase):
         class _Tool:
             name = "search"
             description = "search the catalog"
+
         system, _ = build_prompts(
-            system_prompt="", task_prompt="", user_prompt="",
-            enrichers=(), tools=[_Tool()],
+            system_prompt="",
+            task_prompt="",
+            user_prompt="",
+            enrichers=(),
+            tools=[_Tool()],
         )
         self.assertIn("## TOOLS", system)
         self.assertIn("### search", system)
@@ -123,7 +131,6 @@ class TestBuildPrompts(unittest.TestCase):
 
 
 class TestSourceUtility(unittest.TestCase):
-
     def test_source_properties_override(self):
         from eea.genai.core.utils import Source
 
@@ -138,9 +145,9 @@ class TestSourceUtility(unittest.TestCase):
 
 
 class TestArraySummary(unittest.TestCase):
-
     def test_numeric(self):
         from eea.genai.core.utils import array_summary
+
         out = array_summary([1, 2, 3, 2, 1])
         self.assertEqual(out["count"], 5)
         self.assertEqual(out["unique"], 3)
@@ -150,6 +157,7 @@ class TestArraySummary(unittest.TestCase):
 
     def test_strings(self):
         from eea.genai.core.utils import array_summary
+
         out = array_summary(["a", "b", "a", "c"])
         self.assertEqual(out["count"], 4)
         self.assertEqual(out["unique"], 3)

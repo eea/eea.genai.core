@@ -4,11 +4,7 @@ import logging
 import os
 import re
 
-from pydantic_ai.mcp import (
-    MCPServerSSE,
-    MCPServerStdio,
-    MCPServerStreamableHTTP
-)
+from pydantic_ai.mcp import MCPServerSSE, MCPServerStdio, MCPServerStreamableHTTP
 
 logger = logging.getLogger("eea.genai.core")
 

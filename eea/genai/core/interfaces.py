@@ -11,69 +11,73 @@ from zope.publisher.interfaces.browser import IDefaultBrowserLayer
 from eea.genai.core import EEAMessageFactory as _
 
 
-agents_schema = json.dumps({
-    "type": "array",
-    "items": {
-        "type": "object",
-        "required": ["name"],
-        "properties": {
-            "name": {"type": "string"},
-            "system_prompt": {"type": "string"},
-            "task_prompt": {"type": "string"},
-            "context_providers": {
-                "type": "array",
-                "items": {"type": "string"},
+agents_schema = json.dumps(
+    {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+                "name": {"type": "string"},
+                "system_prompt": {"type": "string"},
+                "task_prompt": {"type": "string"},
+                "context_providers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "skills": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "mcp_servers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "output_type": {"type": "string"},
+                "max_iterations": {"type": "integer", "minimum": 1, "default": 10},
             },
-            "skills": {
-                "type": "array",
-                "items": {"type": "string"},
-            },
-            "tools": {
-                "type": "array",
-                "items": {"type": "string"},
-            },
-            "mcp_servers": {
-                "type": "array",
-                "items": {"type": "string"},
-            },
-            "output_type": {"type": "string"},
-            "max_iterations": {"type": "integer", "minimum": 1, "default": 10},
         },
-    },
-})
+    }
+)
 
-mcp_servers_schema = json.dumps({
-    "type": "object",
-    "additionalProperties": {
+mcp_servers_schema = json.dumps(
+    {
         "type": "object",
-        "oneOf": [
-            {
-                "required": ["command"],
-                "properties": {
-                    "command": {"type": "string"},
-                    "args": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                    "env": {
-                        "type": "object",
-                        "additionalProperties": {"type": "string"},
-                    },
-                },
-            },
-            {
-                "required": ["url"],
-                "properties": {
-                    "url": {"type": "string"},
-                    "headers": {
-                        "type": "object",
-                        "additionalProperties": {"type": "string"},
+        "additionalProperties": {
+            "type": "object",
+            "oneOf": [
+                {
+                    "required": ["command"],
+                    "properties": {
+                        "command": {"type": "string"},
+                        "args": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "env": {
+                            "type": "object",
+                            "additionalProperties": {"type": "string"},
+                        },
                     },
                 },
-            },
-        ],
-    },
-})
+                {
+                    "required": ["url"],
+                    "properties": {
+                        "url": {"type": "string"},
+                        "headers": {
+                            "type": "object",
+                            "additionalProperties": {"type": "string"},
+                        },
+                    },
+                },
+            ],
+        },
+    }
+)
 
 
 class IEEAGenAICoreLayer(IDefaultBrowserLayer):
@@ -105,7 +109,9 @@ class IGenAISettings(Interface):
 
     enabled = schema.Bool(
         title=_("Enable GenAI features"),
-        description=_("Master switch used by GenAI packages to allow/disallow LLM calls."),
+        description=_(
+            "Master switch used by GenAI packages to allow/disallow LLM calls."
+        ),
         default=True,
         required=False,
     )
@@ -159,8 +165,8 @@ class IGenAISettings(Interface):
         schema=agents_schema,
         description=_(
             "JSON array of agent definitions. Each agent defines system_prompt, tools, skills, etc.\n"
-            "Example: [{\"name\": \"summarizer\", \"system_prompt\": \"You are...\", "
-            "\"skills\": [\"metadata_extraction\"], \"tools\": [\"extract_blocks\"]}]"
+            'Example: [{"name": "summarizer", "system_prompt": "You are...", '
+            '"skills": ["metadata_extraction"], "tools": ["extract_blocks"]}]'
         ),
         default=[],
         required=False,
@@ -170,9 +176,9 @@ class IGenAISettings(Interface):
         title=_("MCP Servers Configuration (JSON)"),
         schema=mcp_servers_schema,
         description=_(
-            'JSON object of MCP server definitions. Keys are server names. '
+            "JSON object of MCP server definitions. Keys are server names. "
             'Each value has either "command"+"args" (stdio) or "url" (HTTP). '
-            'Supports ${VAR_NAME} and ${VAR_NAME:-default} env var syntax in values.\n'
+            "Supports ${VAR_NAME} and ${VAR_NAME:-default} env var syntax in values.\n"
             'Example: {"filesystem": {"command": "npx", '
             '"args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"]}}'
         ),
@@ -264,8 +270,15 @@ class AgentConfiguration:
 class IAgentExecutor(Interface):
     """Utility that runs a pydantic_ai Agent with auto-discovered tools."""
 
-    def run(system_prompt, user_prompt, tools=None, output_type=None,
-            deps=None, max_iterations=10, mcp_toolsets=None):
+    def run(
+        system_prompt,
+        user_prompt,
+        tools=None,
+        output_type=None,
+        deps=None,
+        max_iterations=10,
+        mcp_toolsets=None,
+    ):
         """Run an agentic loop with already-composed prompts.
 
         Args:
@@ -432,4 +445,5 @@ class AgentTool:
             site = getattr(ctx.deps, "site", None)
             with site_scope(site):
                 return self.execute(ctx, *args, **kwargs)
+
         return wrapper

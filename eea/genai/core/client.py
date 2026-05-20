@@ -11,7 +11,7 @@ from eea.genai.core.settings import (
     get_llm_api_url,
     get_llm_model,
     get_llm_provider,
-    is_enabled
+    is_enabled,
 )
 
 logger = logging.getLogger("eea.genai.core")
@@ -37,6 +37,7 @@ class PydanticAIClient:
         if provider == "openai-compatible":
             from pydantic_ai.models.openai import OpenAIChatModel
             from pydantic_ai.providers.openai import OpenAIProvider
+
             kwargs = {}
             if api_url:
                 kwargs["base_url"] = api_url
@@ -47,6 +48,7 @@ class PydanticAIClient:
         if provider == "openai":
             from pydantic_ai.models.openai import OpenAIChatModel
             from pydantic_ai.providers.openai import OpenAIProvider
+
             kwargs = {}
             if api_key:
                 kwargs["api_key"] = api_key
@@ -55,16 +57,20 @@ class PydanticAIClient:
         if provider == "anthropic":
             from pydantic_ai.models.anthropic import AnthropicModel
             from pydantic_ai.providers.anthropic import AnthropicProvider
+
             anthropic_kwargs = {}
             if api_key:
                 anthropic_kwargs["api_key"] = api_key
             if api_url:
                 anthropic_kwargs["base_url"] = api_url
-            return AnthropicModel(model_name, provider=AnthropicProvider(**anthropic_kwargs))
+            return AnthropicModel(
+                model_name, provider=AnthropicProvider(**anthropic_kwargs)
+            )
 
         if provider == "google":
             from pydantic_ai.models.google import GoogleModel
             from pydantic_ai.providers.google import GoogleProvider
+
             google_kwargs = {}
             if api_key:
                 google_kwargs["api_key"] = api_key
@@ -73,6 +79,7 @@ class PydanticAIClient:
         if provider == "ollama":
             from pydantic_ai.models.openai import OpenAIChatModel
             from pydantic_ai.providers.ollama import OllamaProvider
+
             kwargs = {}
             if api_url:
                 kwargs["base_url"] = api_url
