@@ -5,7 +5,6 @@ import functools
 
 from zope import schema
 from plone.schema import JSONField
-from zope.component.hooks import setSite
 from zope.interface import Attribute, Interface, implementer
 from zope.publisher.interfaces.browser import IDefaultBrowserLayer
 
@@ -194,7 +193,12 @@ class IAgentConfiguration(Interface):
     """
 
     name = Attribute("Unique agent name")
-    config = Attribute("Agent config dict (system_prompt, tools, output_type, max_iterations)")
+    config = Attribute(
+        "Agent config dict consumed by IAgentExecutor.run_with_agent(). "
+        "Keys: name, system_prompt, task_prompt, tools, enrichers "
+        "(plus legacy skills / context_providers, both merged into enrichers), "
+        "mcp_servers, output_type, max_iterations."
+    )
 
 
 @implementer(IAgentConfiguration)
@@ -204,6 +208,11 @@ class AgentConfiguration:
     Subclass this and set class attributes to define an agent.
     Use with ``<genai:agent name="..." class=".agents.MyAgent" />``.
 
+    Prefer ``enrichers`` for the unified enricher list. The legacy
+    ``skills`` and ``context_providers`` attributes are still read by
+    the executor (merged into the enricher list) so existing subclasses
+    keep working.
+
     Usage::
 
         from eea.genai.core.interfaces import AgentConfiguration
@@ -212,7 +221,7 @@ class AgentConfiguration:
             name = "plotly_generator"
             system_prompt = "You are a Plotly.js chart generation expert..."
             task_prompt = "Generate a complete visualization..."
-            skills = ["plotly_knowledge"]
+            enrichers = ["plotly_knowledge"]
             tools = ["get_plotly_template"]
             output_type = "eea.plotly.models.ChartGenerationResult"
             max_iterations = 10
@@ -221,10 +230,12 @@ class AgentConfiguration:
     name = ""
     system_prompt = ""
     task_prompt = ""
-    context_providers = []
-    skills = []
-    tools = []
-    mcp_servers = []
+    enrichers: list = []
+    # Legacy aliases — still read by the executor and merged into enrichers.
+    context_providers: list = []
+    skills: list = []
+    tools: list = []
+    mcp_servers: list = []
     output_type = ""
     max_iterations = 10
 
@@ -235,6 +246,8 @@ class AgentConfiguration:
             cfg["system_prompt"] = self.system_prompt
         if self.task_prompt:
             cfg["task_prompt"] = self.task_prompt
+        if self.enrichers:
+            cfg["enrichers"] = list(self.enrichers)
         if self.context_providers:
             cfg["context_providers"] = list(self.context_providers)
         if self.skills:
@@ -251,92 +264,68 @@ class AgentConfiguration:
 class IAgentExecutor(Interface):
     """Utility that runs a pydantic_ai Agent with auto-discovered tools."""
 
-    def run(system_prompt, user_prompt, tools=None, result_type=None,
-            deps=None, max_iterations=10):
-        """Run an agentic loop.
+    def run(system_prompt, user_prompt, tools=None, output_type=None,
+            deps=None, max_iterations=10, mcp_toolsets=None):
+        """Run an agentic loop with already-composed prompts.
 
         Args:
             system_prompt: System prompt string.
             user_prompt: User prompt string.
-            tools: Optional list of tool names to use (None = all registered).
-            result_type: Optional pydantic BaseModel for structured output.
-            deps: Optional dependencies object passed to tools via RunContext.
+            tools: Optional list of ZCA tool names. Empty/None = no ZCA tools.
+            output_type: Optional pydantic BaseModel for structured output.
+            deps: Optional AgentDeps passed to tools via RunContext.
             max_iterations: Max LLM requests before stopping.
+            mcp_toolsets: Optional list of pre-built MCP server toolsets.
 
         Returns:
-            str or result_type instance.
+            str if output_type is None, else an output_type instance.
+
+        Raises:
+            AgentDisabled: If GenAI features are disabled in the control panel.
+            AgentExecutionFailed: On underlying LLM/tool loop failure.
+        """
+
+    def run_with_agent(agent_name, user_prompt=None, deps=None):
+        """Resolve agent config by name, enrich prompts via IEnricher utilities,
+        and execute. Returns the agent's output.
+
+        Raises:
+            AgentNotFound: If no agent with that name is registered.
+            AgentConfigInvalid: If the agent's output_type cannot be imported.
         """
 
 
 # Directives
-class IAgentContextProvider(Interface):
+class IEnricher(Interface):
     """Named utility providing dynamic prompt enrichment for agents.
 
-    Context providers are reusable capabilities that agents reference by name.
-    When an agent runs, its context providers are invoked to dynamically contribute
-    to the system prompt and/or user prompt.
+    Enrichers are reusable capabilities agents reference by name. At run
+    time each enricher contributes optional text to the system prompt
+    and/or the user prompt.
 
-    Register via <genai:agentContextProvider> ZCML directive. Reference from agent
-    configs (ZCML or control panel JSON) via "context_providers": ["context_provider_name"].
+    Replaces the legacy IAgentSkill + IAgentContextProvider split, which
+    had identical signatures. Register via the existing ZCML directives
+    <genai:agentSkill> or <genai:agentContextProvider> (both resolve to
+    IEnricher now). Reference from agent configs via
+    "enrichers": ["name", ...]; the executor also still reads the legacy
+    keys "skills" and "context_providers" so existing control-panel JSON
+    and ZCML agent configs keep working.
     """
 
-    name = Attribute("Context provider name (matches the utility registration name)")
+    name = Attribute("Enricher name (matches the utility registration name)")
     description = Attribute("Human-readable description (shown in control panel UI)")
 
     def system_prompt(deps):
-        """Return text to append to the agent's system prompt.
-
-        Args:
-            deps: AgentDeps with context, request, site.
-
-        Returns:
-            str: Text to append, or empty string.
-        """
+        """Return text to append to the agent's system prompt, or empty string."""
 
     def user_prompt(deps):
-        """Return text to append to the agent's user prompt.
-
-        Args:
-            deps: AgentDeps with context, request, site.
-
-        Returns:
-            str: Text to append, or empty string.
-        """
+        """Return text to append to the agent's user prompt, or empty string."""
 
 
-class IAgentSkill(Interface):
-    """Named utility providing dynamic prompt enrichment for agents.
-
-    Skills are reusable capabilities that agents reference by name.
-    When an agent runs, its skills are invoked to dynamically contribute
-    to the system prompt and/or user prompt.
-
-    Register via <genai:agentSkill> ZCML directive. Reference from agent
-    configs (ZCML or control panel JSON) via "skills": ["skill_name"].
-    """
-
-    name = Attribute("Skill name (matches the utility registration name)")
-    description = Attribute("Human-readable description (shown in control panel UI)")
-
-    def system_prompt(deps):
-        """Return text to append to the agent's system prompt.
-
-        Args:
-            deps: AgentDeps with context, request, site.
-
-        Returns:
-            str: Text to append, or empty string.
-        """
-
-    def user_prompt(deps):
-        """Return text to append to the agent's user prompt.
-
-        Args:
-            deps: AgentDeps with context, request, site.
-
-        Returns:
-            str: Text to append, or empty string.
-        """
+# Legacy aliases — kept so existing ZCML and Python imports do not break.
+# All three names refer to the same interface; choose IEnricher in new code.
+IAgentSkill = IEnricher
+IAgentContextProvider = IEnricher
 
 
 class IAgentTool(Interface):
@@ -361,18 +350,18 @@ class IAgentTool(Interface):
         """
 
 
-@implementer(IAgentContextProvider)
-class AgentContextProvider:
-    """Base class for agent context providers.
+@implementer(IEnricher)
+class Enricher:
+    """Base class for agent prompt enrichers.
 
-    Subclasses override ``system_prompt()`` and/or ``user_prompt()``
-    to dynamically enrich agent prompts at runtime.
+    Subclasses override ``system_prompt()`` and/or ``user_prompt()`` to
+    dynamically contribute text to the agent's prompt at runtime.
 
     Usage::
 
-        from eea.genai.core.interfaces import AgentContextProvider
+        from eea.genai.core.interfaces import Enricher
 
-        class GenericMetadata(AgentContextProvider):
+        class GenericMetadata(Enricher):
             name = "GenericMetadata"
             description = "Adds available generic metadata to the user prompt"
 
@@ -384,43 +373,15 @@ class AgentContextProvider:
     description = ""
 
     def system_prompt(self, deps):
-        """Override to append text to the system prompt."""
         return ""
 
     def user_prompt(self, deps):
-        """Override to append text to the user prompt."""
         return ""
 
 
-@implementer(IAgentSkill)
-class AgentSkill:
-    """Base class for agent skills.
-
-    Subclasses override ``system_prompt()`` and/or ``user_prompt()``
-    to dynamically enrich agent prompts at runtime.
-
-    Usage::
-
-        from eea.genai.core.interfaces import AgentSkill
-
-        class BlocksKnowledgeSkill(AgentSkill):
-            name = "blocks_knowledge"
-            description = "Adds available block types to the system prompt"
-
-            def system_prompt(self, deps):
-                return get_block_types_description()
-    """
-
-    name = ""
-    description = ""
-
-    def system_prompt(self, deps):
-        """Override to append text to the system prompt."""
-        return ""
-
-    def user_prompt(self, deps):
-        """Override to append text to the user prompt."""
-        return ""
+# Legacy aliases for the base class — keeps existing imports working.
+AgentSkill = Enricher
+AgentContextProvider = Enricher
 
 
 @implementer(IAgentTool)
@@ -457,17 +418,18 @@ class AgentTool:
         raise NotImplementedError
 
     def get_callable(self):
-        """Return a wrapper that sets the Zope site before calling execute.
+        """Return a wrapper that restores the Zope site before calling execute.
 
-        pydantic_ai runs sync tools in a thread pool via run_in_executor.
-        The new thread doesn't inherit Zope's thread-local site, so
-        plone.api calls would fail. This wrapper restores the site from
-        ctx.deps.site before each tool invocation.
+        pydantic_ai runs sync tools in a thread pool; the worker thread does
+        not inherit Zope's thread-local site, so plone.api calls would fail.
+        This wrapper restores ``ctx.deps.site`` (and resets it afterwards)
+        for the duration of the tool call.
         """
+        from eea.genai.core.utils import site_scope
+
         @functools.wraps(self.execute)
         def wrapper(ctx, *args, **kwargs):
             site = getattr(ctx.deps, "site", None)
-            if site is not None:
-                setSite(site)
-            return self.execute(ctx, *args, **kwargs)
+            with site_scope(site):
+                return self.execute(ctx, *args, **kwargs)
         return wrapper

@@ -100,6 +100,77 @@ def get_agent_config(agent_name: str) -> dict | None:
     return zcml_agents.get(agent_name)
 
 
+def validate_agent_config(config: dict) -> list[str]:
+    """Return a list of validation errors for an agent config dict.
+
+    Checks that:
+      - the tools, enrichers (skills/context_providers), and mcp_servers
+        named in the config are registered in the ZCA registry.
+      - max_iterations is positive when present.
+      - output_type, if set, can be imported.
+
+    Empty list means valid. Intended for use at config-load time so a
+    typo in agents_json (control panel JSON) fails fast rather than at
+    first agent invocation.
+    """
+    from importlib import import_module
+
+    from eea.genai.core.interfaces import IAgentTool, IEnricher
+    from eea.genai.core.mcp import parse_tool_refs
+
+    errors: list[str] = []
+    name = config.get("name") or "<unnamed>"
+
+    tools = config.get("tools") or []
+    zca_tools, _mcp_refs = parse_tool_refs(tools)
+    registered_tools = {n for n, _ in getUtilitiesFor(IAgentTool)}
+    for t in zca_tools:
+        if t not in registered_tools:
+            errors.append(f"Agent '{name}': unknown tool '{t}'")
+
+    enricher_names: list[str] = []
+    for key in ("enrichers", "skills", "context_providers"):
+        for n in config.get(key) or []:
+            if n not in enricher_names:
+                enricher_names.append(n)
+    registered_enrichers = {n for n, _ in getUtilitiesFor(IEnricher)}
+    for e in enricher_names:
+        if e not in registered_enrichers:
+            errors.append(f"Agent '{name}': unknown enricher '{e}'")
+
+    mcp_servers = config.get("mcp_servers") or []
+    if mcp_servers:
+        mcp_config = get_mcp_servers_config()
+        for server in mcp_servers:
+            if server not in mcp_config:
+                errors.append(f"Agent '{name}': unknown mcp_server '{server}'")
+
+    max_iter = config.get("max_iterations")
+    if max_iter is not None and (not isinstance(max_iter, int) or max_iter < 1):
+        errors.append(
+            f"Agent '{name}': max_iterations must be positive int, got {max_iter!r}"
+        )
+
+    output_type = config.get("output_type")
+    if output_type:
+        if "." not in output_type:
+            errors.append(
+                f"Agent '{name}': output_type must be a dotted path "
+                f"(module.Class), got '{output_type}'"
+            )
+        else:
+            module_path, attr = output_type.rsplit(".", 1)
+            try:
+                getattr(import_module(module_path), attr)
+            except (ImportError, AttributeError) as exc:
+                errors.append(
+                    f"Agent '{name}': output_type '{output_type}' cannot be "
+                    f"imported: {exc}"
+                )
+
+    return errors
+
+
 def get_agent_for_content_type(agent_name: str, content_type: str) -> str | None:
     """Return the resolved agent name for a content type.
 

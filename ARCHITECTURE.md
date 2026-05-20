@@ -19,22 +19,36 @@ All packages live under `/develop/sources/` in the eea-website-backend repo.
 
 ```
 eea/genai/core/
-  interfaces.py      — ILLMClient, IBlockKnowledge, IBlockTextExtractor,
-                        IAgentTool, IAgentSkill, IAgentExecutor, IAgentConfiguration,
-                        IGenAISettings, AgentTool, AgentSkill, BlockKnowledge
+  interfaces.py      — ILLMClient, IAgentTool, IEnricher, IAgentExecutor,
+                        IAgentConfiguration, IGenAISettings, AgentTool,
+                        Enricher, AgentConfiguration. IAgentSkill +
+                        IAgentContextProvider are aliases to IEnricher
+                        (and AgentSkill / AgentContextProvider to Enricher)
+                        kept so existing ZCML/Python imports keep working.
   client.py         — PydanticAIClient (implements ILLMClient, uses pydantic_ai)
   agent.py          — PydanticAIAgentExecutor (implements IAgentExecutor), AgentDeps
+  prompts.py        — Pure prompt composition: build_prompts(), collect_enricher_prompts()
+  errors.py         — Typed exceptions: AgentDisabled, AgentNotFound,
+                        AgentConfigInvalid, AgentExecutionFailed, EnricherFailed
+  utils.py          — Shared helpers: Source, get_executor, batch_get_utilities,
+                        site_scope context manager, array_summary
+  testing.py        — make_deps() factory, StubEnricher, RaisingEnricher for unit tests
   tools.py          — Built-in agent tools (extract_blocks, memory, code_exec, fetch_url)
-  prompts.py        — Global system rules + per-feature overrides helpers
-  settings.py       — plone.registry-backed settings helpers + agent config helpers
-  metaconfigure.py  — ZCML directive handlers for <genai:blockKnowledge>, <genai:agentTool>,
-                        <genai:agentSkill>, <genai:agent>
+  mcp.py            — MCP server toolset construction
+  settings.py       — plone.registry-backed settings + validate_agent_config()
+  metaconfigure.py  — ZCML directive handlers for <genai:agentTool>,
+                        <genai:agentSkill>, <genai:agentContextProvider>, <genai:agent>
   meta.zcml         — Declares directives in namespace http://namespaces.eea.europa.eu/genai
   configure.zcml    — Registers PydanticAIClient, PydanticAIAgentExecutor, and tools
   permissions.zcml  — Defines eea.genai.manage permission
   browser/          — Classic UI control panel (GenAI Settings)
   restapi/          — Volto controlpanel adapter (plone.restapi)
 ```
+
+Registration of tools, enrichers, agents, and block knowledge is done
+exclusively via ZCML directives. There is no separate decorator-based
+registry — packages declare their utilities in their `configure.zcml`
+and `metaconfigure.py` translates the XML into `provideUtility` calls.
 
 ### ILLMClient
 
@@ -77,33 +91,52 @@ Registered in `configure.zcml` via `<genai:agentTool>`:
 | `fetch_url` | Fetch and parse content from URLs |
 | `get_plotly_template` | Fetch a predefined Plotly chart template by label (eea.plotly) |
 
-### IAgentSkill
+### IEnricher
 
-Named utility (name=skill_name) for dynamic prompt enrichment. Skills are reusable capabilities that agents reference by name. When an agent runs, its skills are invoked to dynamically contribute to the system prompt and/or user prompt. Registered via `<genai:agentSkill>` ZCML directive. Base class `AgentSkill` available for subclassing.
+Named utility for dynamic prompt enrichment. Enrichers are reusable
+capabilities agents reference by name; at run time each enricher
+optionally contributes text to the system prompt and/or the user prompt.
+Replaces the legacy `IAgentSkill` + `IAgentContextProvider` split — both
+had identical signatures. The legacy names are kept as aliases so
+existing ZCML directives (`<genai:agentSkill>`, `<genai:agentContextProvider>`)
+and Python imports (`AgentSkill`, `AgentContextProvider`) continue to work.
+
+Register via `<genai:agentSkill>` or `<genai:agentContextProvider>`
+ZCML directives (interchangeable — both produce IEnricher utilities).
+Base class `Enricher` available for subclassing.
 
 ```python
-from eea.genai.core.interfaces import AgentSkill
+from eea.genai.core.interfaces import Enricher
 
-class BlocksKnowledgeSkill(AgentSkill):
+class BlocksKnowledgeSkill(Enricher):
     name = "blocks_knowledge"
     description = "Adds available Volto block types to the system prompt"
 
     def system_prompt(self, deps):
-        # deps has .context, .request, .site
+        # deps has .context, .request, .site, plus any extras passed in
         return "Available block types:\n..."
 
     def user_prompt(self, deps):
-        return ""  # This skill only enriches system prompt
+        return ""  # this enricher only writes to the system prompt
 ```
 
-### Registered Skills
+In agent configs, enrichers are listed by name. The executor reads from
+`"enrichers"` (preferred), and also from the legacy keys `"skills"` and
+`"context_providers"` so old configs keep working:
 
-| Skill Name | Package | Description |
+```json
+{"name": "summarizer", "enrichers": ["generic_metadata", "blocks"], ...}
+```
+
+### Registered Enrichers
+
+| Enricher Name | Package | Description |
 |---|---|---|
 | `blocks_knowledge` | eea.genai.blocks | Adds available block type schemas to system prompt |
-| `metadata_extraction` | eea.genai.summary | Adds content metadata (title, description, geo/temporal) to user prompt |
-| `blocks_extraction` | eea.genai.summary | Adds block text content to user prompt |
-| `plotly_knowledge` | eea.plotly | Adds Plotly.js chart structure knowledge, available templates, and active theme to system prompt |
+| `blocks` | eea.genai.blocks | Adds block text content of the current page to user prompt |
+| `generic_metadata` | eea.genai.summary | Adds content metadata (title, description, language, geo/temporal) to user prompt |
+| `plotly_knowledge` | eea.plotly | Adds Plotly.js chart structure knowledge to system prompt |
+| `plotly_visualization` | eea.plotly | Adds the current chart's data + layout to user prompt |
 
 ### IAgentExecutor
 
@@ -131,13 +164,20 @@ result = executor.run_with_agent(
 
 ### AgentDeps
 
-Dependencies passed to agent tools via RunContext:
+Single class shared by all feature packages. Feature-specific values
+(e.g. `properties`, `data_sources`) are passed as `**extras` and are
+accessible both as attributes and via the `.extras` dict. The legacy
+per-package subclasses (`summary.AgentDeps`, `blocks.AgentDeps`,
+`plotly.AgentDeps`) are gone.
 
 ```python
 from eea.genai.core.agent import AgentDeps
 
-deps = AgentDeps(context=context_obj, request=request, site=portal)
-# Available in tools via ctx.deps.context, ctx.deps.request, ctx.deps.site
+deps = AgentDeps(context=context_obj, request=request, properties=props)
+# In tools/enrichers via ctx.deps:
+#   ctx.deps.context, ctx.deps.request, ctx.deps.site (auto-filled from getSite())
+#   ctx.deps.properties                # attribute access
+#   ctx.deps.extras["properties"]      # dict access
 ```
 
 ### ZCML Directives
@@ -159,21 +199,16 @@ deps = AgentDeps(context=context_obj, request=request, site=portal)
       class=".tools.MyTool"
   />
 
-  <!-- Agent skill registration -->
+  <!-- Enricher registration (skill / context provider — same thing now) -->
   <genai:agentSkill
-      name="my_skill"
-      class=".skills.MySkill"
+      name="my_enricher"
+      class=".skills.MyEnricher"
   />
 
-  <!-- Default agent with skills -->
+  <!-- Default agent — points to a class that subclasses AgentConfiguration -->
   <genai:agent
       name="my_agent"
-      system_prompt="My agent behavior"
-      user_prompt="My agent task"
-      skills="blocks_knowledge metadata_extraction"
-      tools="extract_blocks"
-      output_type="my.package.models.MyResult"
-      max_iterations="10"
+      class=".agents.MyAgent"
   />
 
 </configure>
@@ -185,19 +220,28 @@ Packages declare default agents via `<genai:agent>` ZCML directive. These are au
 
 Content-type-specific agents use a naming convention: `base_agent:ContentType` (e.g. `summarizer:EEAFigure`). The lookup via `get_agent_for_content_type("summarizer", "EEAFigure")` tries `summarizer:EEAFigure` first, then falls back to `summarizer`.
 
-### Skills
+### Enrichers (Skills / Context Providers)
 
-Skills are reusable prompt-enrichment capabilities that agents reference by name. When `run_with_agent()` executes, it discovers the agent's skills and calls their `system_prompt(deps)` / `user_prompt(deps)` methods, appending the results to the respective prompts.
+Enrichers are reusable prompt-enrichment utilities that agents reference
+by name. When `run_with_agent()` executes, it batch-discovers all
+enrichers referenced by the agent config and calls their
+`system_prompt(deps)` / `user_prompt(deps)` methods, appending the
+non-empty results to the system and user prompts respectively.
 
-From the control panel, agents reference skills in the JSON config:
+From the control panel, agents reference enrichers in the JSON config:
+
 ```json
 {
   "name": "my_agent",
   "system_prompt": "You are a helpful assistant.",
-  "skills": ["blocks_knowledge", "metadata_extraction"],
+  "enrichers": ["blocks_knowledge", "generic_metadata"],
   "tools": ["extract_blocks"]
 }
 ```
+
+For backward compatibility, the executor also reads the legacy keys
+`"skills"` and `"context_providers"` and merges them into the enricher
+list, so older configs continue to work unchanged.
 
 ### Control Panel + Settings
 
@@ -212,8 +256,8 @@ Settings fields:
 | `llm_model` | TextLine | Model name (falls back to `LLM_MODEL` env var) |
 | `llm_api_url` | TextLine | API URL for openai-compatible/ollama/anthropic (falls back to `LLM_URL` env var) |
 | `global_system_rules` | Text | Prepended to every agent's system prompt (global rules, tone, safety) |
-| `feature_settings_json` | Text | JSON object for feature-specific configuration |
-| `agents_json` | Text | JSON array of agent definitions |
+| `agents_json` | JSONField | JSON array of agent definitions (overrides ZCML defaults by name) |
+| `mcp_servers_json` | JSONField | JSON object of MCP server definitions, keyed by server name |
 
 API keys are **never stored in the registry** — they come from env vars only (`LLM_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`).
 
@@ -226,9 +270,16 @@ Agents are configured via `agents_json` in `IGenAISettings`:
 Agent config fields:
 - `name` (required) - Unique agent name
 - `system_prompt` - System prompt for the agent
-- `tools` - List of tool names to make available
+- `task_prompt` - Static task instructions appended to the user prompt as `## TASK`
+- `tools` - List of tool names to make available (ZCA-registered, or `server/tool` for MCP)
+- `enrichers` - List of enricher names (preferred). Legacy: `skills`, `context_providers` are still read
+- `mcp_servers` - List of MCP server names whose full toolsets to attach
 - `output_type` - Dotted path to pydantic model for structured output (optional)
 - `max_iterations` - Max tool-calling iterations (default: 10)
+
+`validate_agent_config(config)` in `eea.genai.core.settings` returns a
+list of errors for any tools/enrichers/mcp_servers/output_type that are
+not registered; an empty list means valid.
 
 Example:
 ```json
@@ -260,48 +311,37 @@ Content-type-specific agents use the naming convention `base:ContentType`:
 ]
 ```
 
-### Feature Settings Keys
-
-Used in `feature_settings_json`:
-
-| Key | Description |
-|---|---|
-| `genai.blocks.generate.agent` | Agent name for block generation |
-| `genai.blocks.generate_single.agent` | Agent name for single block generation |
-| `genai.blocks.rewrite.agent` | Agent name for block rewriting |
-| `genai.blocks.rewrite.default_style` | Default rewriting style |
-
 ## eea.genai.summary
 
 ### Files
 
 ```
 eea/genai/summary/
-  behaviors.py       — ILLMSummary behavior (allow_llm_summary bool, llm_summary text)
-  prompts.py        — Reference prompts for agent config, extract_metadata_prompt(), extract_blocks_prompt()
-  subscribers.py   — generate_summary_for() using agents
-  interfaces.py    — IGenAISummaryLayer marker
-  configure.zcml   — Behavior registration, event subscriber
+  behaviors.py        — ILLMSummary behavior (allow_llm_summary, llm_summary)
+  generate.py         — generate_summary_for(obj, request, properties=None)
+  context_providers.py — GenericMetadataProvider enricher + extract_metadata_prompt()
+  agents.py           — AgentConfiguration subclasses registered via ZCML
+  agents.json         — Default agent definitions shipped with the package
+  subscribers.py      — Event handlers wiring generate_summary_for to content changes
+  interfaces.py       — IGenAISummaryLayer marker
+  configure.zcml      — Behavior + enricher + agent + event subscriber registrations
   restapi/
-    post.py        — LLMSummaryPost (@llm-summary), LLMSummaryBatchPost (@llm-summary-batch)
-    configure.zcml — Endpoint registration
+    post.py           — LLMSummaryPost (@llm-summary), LLMSummaryBatchPost (@llm-summary-batch)
+    configure.zcml    — Endpoint registration
 ```
 
 ### Summary Generation (Agent-based)
 
-Uses `IAgentExecutor.run_with_agent()` based on agent naming convention:
+`generate_summary_for(obj, request, properties=None)`:
 
-1. Look up agent via `get_agent_for_content_type("summarizer", portal_type)` — tries `summarizer:<type>` first, falls back to `summarizer`
-2. Run agent with `executor.run_with_agent(agent_name, deps=deps)`
-3. Store result in `llm_summary` field
+1. Look up agent via `get_agent_for_content_type("summarizer", portal_type)` — tries `summarizer:<type>` first, falls back to `summarizer`. Raises `AgentConfigInvalid` if neither is registered.
+2. Call `get_executor().run_with_agent(agent_name, deps=AgentDeps(...))`.
+3. Return `{"llm_summary": result}`. The subscriber stores it on the object.
 
-### Reference Prompts (prompts.py)
-
-Prompts are kept for reference when configuring agents:
-
-- `SUMMARY_SYSTEM_PROMPT` - Default summary system prompt
-- `extract_metadata_prompt(context)` - Extract EEA metadata fields
-- `extract_blocks_prompt(context)` - Extract text from Volto blocks
+The `GenericMetadataProvider` enricher (name `generic_metadata`) pulls
+title, description, language, geographic coverage, and temporal coverage
+from the object (or from `properties` if passed for in-progress edits)
+and appends them to the user prompt.
 
 ## eea.genai.blocks
 
@@ -309,52 +349,63 @@ Prompts are kept for reference when configuring agents:
 
 ```
 eea/genai/blocks/
-  text_extractor.py  — BlockTextExtractor utility, _iter_blocks_ordered()
-  models.py          — Pydantic models for structured LLM output
-  prompts.py         — Reference prompts for agent config
-  generate.py        — generate_blocks(), generate_block() using agents
-  rewrite.py         — rewrite_blocks(), rewrite_block() using agents
-  knowledge.py       — Block knowledge classes (SlateBlockKnowledge, etc.)
-  sanitizers.py      — Block sanitization utilities
-  configure.zcml     — Block knowledge registration, tool registrations
+  agents.py            — AgentConfiguration subclasses for the 4 block agents
+  context_providers.py — BlocksContentProvider enricher (batched IBlockKnowledge lookup)
+  skills.py            — BlocksKnowledgeSkill enricher (block-type descriptions to system prompt)
+  models.py            — Pydantic models for structured LLM output
+  knowledge.py         — Block knowledge classes (SlateBlockKnowledge, ImageBlockKnowledge, ColumnsBlockKnowledge, TabsBlockKnowledge)
+  generate.py          — generate_blocks(), generate_block()
+  rewrite.py           — rewrite_blocks(), rewrite_block()
+  sanitizers.py        — Block sanitization utilities
+  interfaces.py        — IBlockKnowledge, BlockKnowledge base class
+  metaconfigure.py     — <genai:blockKnowledge> ZCML directive handler
+  meta.zcml            — Declares the blockKnowledge directive
+  configure.zcml       — Block knowledge + enricher + agent + tool registrations
   restapi/
-    generate.py      — LLMGenerateBlocksPost
-    rewrite.py       — LLMRewriteBlocksPost
-    configure.zcml   — Endpoint registration
+    generate.py        — LLMGenerateBlocksPost
+    rewrite.py         — LLMRewriteBlocksPost
+    configure.zcml     — Endpoint registration
+  tests/
+    test_knowledge.py  — Unit tests for SlateBlockKnowledge.block_sanitizer + text_extractor
 ```
 
 ### Block Generation (Agent-based)
 
-Uses agents configured in feature settings:
+Both functions resolve the executor via `core.utils.get_executor()` and
+call `run_with_agent()` with a unified `AgentDeps(context, request,
+properties=properties)`:
 
 ```python
-# Uses agent from feature_settings_json key "genai.blocks.generate.agent"
-generate_blocks(user_request, page_context=..., context=obj, request=req)
+from eea.genai.blocks.generate import generate_blocks, generate_block
 
-# Uses agent from feature_settings_json key "genai.blocks.generate_single.agent"
-generate_block(user_request, block_type=..., page_context=..., context=obj, request=req)
+# Uses the "blocks_generator" agent (or its agents_json override)
+generate_blocks(user_request, context=obj, request=req, properties=props)
+
+# Uses the "blocks_generator_single" agent
+generate_block(user_request, block_type="slate", context=obj, request=req)
 ```
 
 ### Block Rewriting (Agent-based)
 
-Uses agents configured in feature settings:
-
 ```python
-# Uses agent from feature_settings_json key "genai.blocks.rewrite.agent"
-rewrite_blocks(blocks, style=..., page_context=..., context=obj, request=req)
+from eea.genai.blocks.rewrite import rewrite_blocks, rewrite_block
 
-# Uses agent from feature_settings_json key "genai.blocks.rewrite_single.agent"
-rewrite_block(block, style=..., page_context=..., context=obj, request=req)
+# Uses the "block_rewriter" agent
+rewrite_blocks(blocks, style="more concise", context=obj, request=req)
+
+# Uses the "block_rewriter_single" agent
+rewrite_block(block, style=..., context=obj, request=req)
 ```
 
-### Reference Prompts (prompts.py)
+All four agents are declared via `<genai:agent>` in `configure.zcml` and
+can be overridden by name from the control panel `agents_json`.
 
-Prompts are kept for reference when configuring agents:
+### Registered Enrichers
 
-- `BLOCK_GEN_SYSTEM_PROMPT` - Base system prompt for block generation
-- `BLOCK_GEN_USER_PROMPT_TEMPLATE` - User prompt template
-- `get_block_types_description()` - Generates block type info from IBlockKnowledge
-- `REWRITE_SYSTEM_PROMPT` - Base system prompt for block rewriting
+| Name | Source | Description |
+|---|---|---|
+| `blocks_knowledge` | skills.py | Adds the schema and example of every registered block type to the system prompt |
+| `blocks` | context_providers.py | Adds the text content of the current page (extracted via `IBlockKnowledge.text_extractor`) to the user prompt |
 
 ### Pydantic Models
 
@@ -443,34 +494,31 @@ The package ships with knowledge for these block types:
 ```
 eea/plotly/
   behaviors.py           — IPlotlyVisualization behavior
-  prompts.py             — Reference prompts, clean_layout(), IRRELEVANT_LAYOUT_KEYS
-  llm_prompt.py          — Backward compatibility re-exports
-  context_providers.py   — PlotlyVisualizationProvider (chart data → user prompt)
-  skills.py              — PlotlyKnowledgeSkill (Plotly structure + templates → system prompt)
+  prompts.py             — clean_layout(), IRRELEVANT_LAYOUT_KEYS
+  context_providers.py   — PlotlyVisualizationProvider enricher (chart data → user prompt)
+  skills.py              — PlotlyKnowledgeSkill enricher (Plotly structure → system prompt)
   tools.py               — GetPlotlyTemplateTool (fetch template by label)
   models.py              — ChartGenerationResult pydantic model
+  agents.py              — AgentConfiguration subclasses
   generate.py            — generate_chart() helper function
   controlpanel.py        — IPlotlySettings (themes, templates)
   restapi/chart/post.py  — POST @llm-generate-chart endpoint
+  io_csv.py, io_json.py  — Data input parsing (NOT part of the agent flow)
 ```
 
 ### GenAI Agents
 
 | Agent | Description |
 |---|---|
-| `summarizer:visualization` | Chart interpretation — uses generic_metadata + blocks + plotly_visualization context |
-| `plotly_generator` | Full visualization content generation (metadata + chart) — uses plotly_knowledge skill + get_plotly_template tool |
+| `summarizer:visualization` | Chart interpretation — uses `generic_metadata` + `blocks` + `plotly_visualization` enrichers |
+| `plotly_generator` | Full visualization content generation — uses `plotly_knowledge` enricher + `get_plotly_template` tool |
 
-### Context Providers
+### Registered Enrichers
 
 | Name | Description |
 |---|---|
-| `plotly_visualization` | Injects cleaned Plotly JSON (with truncated large arrays) into user prompt |
-
-### Reference Prompts (prompts.py)
-
-- `PLOTLY_SYSTEM_PROMPT` - System prompt for chart summarization
-- `clean_layout(layout)` - Remove cosmetic layout keys
+| `plotly_knowledge` | Adds Plotly.js JSON structure knowledge to the system prompt |
+| `plotly_visualization` | Injects cleaned Plotly JSON (with large arrays summarized) into the user prompt |
 
 ### REST Endpoints
 
@@ -496,8 +544,4 @@ eea/plotly/
 
 - Improve control panel UI for agent configuration (currently raw JSON fields)
 - Add web_search tool
-
-
-BlocksContentProvider
-
-BlocksKnowledgeSkill
+- Run `validate_agent_config()` automatically when `agents_json` is saved in the control panel
