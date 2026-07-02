@@ -42,7 +42,7 @@ setup(
     zip_safe=False,
     install_requires=[
         "setuptools",
-        "pydantic-ai[mcp]",
+        "pydantic-ai[mcp]==1.107.0",
         "plone.app.registry",
         "plone.restapi",
     ],
