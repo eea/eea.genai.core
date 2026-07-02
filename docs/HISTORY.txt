@@ -1,8 +1,10 @@
 Changelog
 =========
 
-1.2-dev0 - (unreleased)
+1.2 - (2026-07-02)
 ---------------------------
+* Change: specify pydantic-ai version
+  [razvanMiu]
 
 1.0 - (2026-05-20)
 ---------------------------
