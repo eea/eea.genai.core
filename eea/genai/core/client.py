@@ -26,7 +26,7 @@ class PydanticAIClient:
         provider = get_llm_provider()
         model_name = get_llm_model()
         api_url = get_llm_api_url()
-        api_key = os.environ.get("LLM_API_KEY", "") #betterleaks:allow
+        api_key = os.environ.get("LLM_API_KEY", "")  # betterleaks:allow
 
         if not model_name:
             raise RuntimeError(
