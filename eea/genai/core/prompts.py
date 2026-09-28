@@ -67,6 +67,57 @@ def collect_enricher_prompts(
     return system_parts, user_parts
 
 
+def collect_content_parts(
+    enrichers: Iterable[Any],
+    deps: Any,
+    *,
+    swallow_errors: bool = True,
+) -> list:
+    """Run each enricher's ``content_parts()`` callback and flatten results.
+
+    Content parts are non-text user-prompt payloads (e.g. pydantic_ai
+    ``ImageUrl``) used for multimodal input. Enrichers without a
+    ``content_parts`` method (e.g. plain test stubs) are skipped.
+
+    Returns a flat list of parts in enricher order.
+    """
+    from eea.genai.core.errors import EnricherFailed
+
+    parts: list = []
+    for enricher in enrichers:
+        name = getattr(enricher, "name", enricher.__class__.__name__)
+        callback = getattr(enricher, "content_parts", None)
+        if callback is None:
+            continue
+        try:
+            candidate = callback(deps) or []
+        except Exception as exc:
+            if swallow_errors:
+                logger.exception("Enricher '%s' content_parts() failed", name)
+                continue
+            raise EnricherFailed(name, "content_parts", exc) from exc
+        if candidate:
+            parts.extend(candidate)
+    return parts
+
+
+def assemble_user_prompt(final_user: str, content_parts: list) -> "str | list":
+    """Combine the composed user prompt text with multimodal content parts.
+
+    Returns the text unchanged when there are no parts. With parts, returns
+    a list of pydantic_ai UserContent items (the parts followed by a
+    TextContent with the prompt text) suitable for ``Agent.run_sync``.
+    """
+    if not content_parts:
+        return final_user
+    from pydantic_ai.messages import TextContent
+
+    prompt = list(content_parts)
+    if final_user:
+        prompt.append(TextContent(content=final_user))
+    return prompt
+
+
 def build_prompts(
     system_prompt: str,
     task_prompt: str,

@@ -24,7 +24,11 @@ from eea.genai.core.interfaces import (
     IEnricher,
     ILLMClient,
 )
-from eea.genai.core.prompts import build_prompts
+from eea.genai.core.prompts import (
+    assemble_user_prompt,
+    build_prompts,
+    collect_content_parts,
+)
 from eea.genai.core.settings import (
     get_agent_config,
     get_global_system_rules,
@@ -85,7 +89,7 @@ class PydanticAIAgentExecutor:
     def run(
         self,
         system_prompt: str,
-        user_prompt: str,
+        user_prompt: "str | list",
         tools: list[str] | None = None,
         output_type: Any = None,
         deps: Any = None,
@@ -93,6 +97,10 @@ class PydanticAIAgentExecutor:
         mcp_toolsets: list | None = None,
     ) -> Any:
         """Run a single agentic loop with already-composed prompts.
+
+        ``user_prompt`` may be a string or a list of pydantic_ai
+        user-content parts (e.g. ``ImageUrl`` + ``TextContent``) for
+        multimodal input.
 
         Returns the structured output (if ``output_type`` is set) or a string.
         """
@@ -187,6 +195,19 @@ class PydanticAIAgentExecutor:
             tools=tool_utils,
             deps=deps,
         )
+
+        # Multimodal: attach enricher content parts (e.g. image bytes) to
+        # the user prompt. run_sync accepts str | Sequence[UserContent];
+        # text must be a TextContent item (TextPart is a message part, not
+        # a valid UserContent item for the OpenAI model).
+        content_parts = collect_content_parts(enrichers, deps)
+        if content_parts:
+            logger.debug(
+                "Attaching %d multimodal content part(s) to agent '%s'",
+                len(content_parts),
+                agent_name,
+            )
+        final_user = assemble_user_prompt(final_user, content_parts)
 
         mcp_toolsets = self._build_mcp_toolsets(config, mcp_refs)
 

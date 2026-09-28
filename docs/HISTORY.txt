@@ -3,6 +3,17 @@ Changelog
 
 1.3-dev0 - (unreleased)
 ---------------------------
+1.3 - (unreleased)
+---------------------------
+* Feature: multimodal prompts — enrichers can now contribute non-text
+  content parts (e.g. pydantic_ai ``ImageUrl``) to the agent's user
+  prompt via ``Enricher.content_parts()`` (issue #305021)
+* Feature: agents can opt in to AI-generated summary markers via the
+  ``summary_markers`` config key (issue #305021)
+* Feature: agents can cap summary length via the ``max_summary_length``
+  config key — generation is retried once when the model overshoots
+  (consumed by eea.genai.summary.generate) (issue #305021)
+  [razvanMiu refs #305021]
 
 1.2 - (2026-07-02)
 ---------------------------

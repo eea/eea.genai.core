@@ -203,7 +203,7 @@ class IAgentConfiguration(Interface):
         "Agent config dict consumed by IAgentExecutor.run_with_agent(). "
         "Keys: name, system_prompt, task_prompt, tools, enrichers "
         "(plus legacy skills / context_providers, both merged into enrichers), "
-        "mcp_servers, output_type, max_iterations."
+        "mcp_servers, output_type, max_iterations, summary_markers."
     )
 
 
@@ -244,6 +244,13 @@ class AgentConfiguration:
     mcp_servers: list = []
     output_type = ""
     max_iterations = 10
+    #: Wrap generated summaries in AI-generated markers (consumed by
+    #: eea.genai.summary.generate — see wrap_with_ai_markers).
+    summary_markers = False
+    #: Max length in characters for the generated summary text (markers not
+    #: counted); 0 = no limit. When the model overshoots, generation is
+    #: retried once (consumed by eea.genai.summary.generate).
+    max_summary_length = 0
 
     @property
     def config(self):
@@ -264,6 +271,10 @@ class AgentConfiguration:
             cfg["mcp_servers"] = list(self.mcp_servers)
         if self.output_type:
             cfg["output_type"] = self.output_type
+        if self.summary_markers:
+            cfg["summary_markers"] = True
+        if self.max_summary_length:
+            cfg["max_summary_length"] = int(self.max_summary_length)
         return cfg
 
 
@@ -283,7 +294,9 @@ class IAgentExecutor(Interface):
 
         Args:
             system_prompt: System prompt string.
-            user_prompt: User prompt string.
+            user_prompt: User prompt string, or a list of pydantic_ai
+                user-content parts (e.g. ImageUrl + TextContent) for
+                multimodal input.
             tools: Optional list of ZCA tool names. Empty/None = no ZCA tools.
             output_type: Optional pydantic BaseModel for structured output.
             deps: Optional AgentDeps passed to tools via RunContext.
@@ -333,6 +346,15 @@ class IEnricher(Interface):
 
     def user_prompt(deps):
         """Return text to append to the agent's user prompt, or empty string."""
+
+    def content_parts(deps):
+        """Return non-text user-content parts (e.g. pydantic_ai ImageUrl)
+        to attach to the user prompt, or an empty list.
+
+        Used for multimodal input: parts are prepended to the final user
+        prompt text before the agent runs.
+        """
+        return []
 
 
 # Legacy aliases — kept so existing ZCML and Python imports do not break.
@@ -390,6 +412,11 @@ class Enricher:
 
     def user_prompt(self, deps):
         return ""
+
+    def content_parts(self, deps) -> list:
+        """Return non-text content parts (e.g. pydantic_ai ImageUrl) to
+        attach to the user prompt. Default: none (text-only enricher)."""
+        return []
 
 
 # Legacy aliases for the base class — keeps existing imports working.
