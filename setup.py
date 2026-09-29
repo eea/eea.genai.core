@@ -43,6 +43,12 @@ setup(
     install_requires=[
         "setuptools",
         "pydantic-ai[mcp]==1.107.0",
+        # pydantic-ai 1.107.0 imports mcp.shared.context.RequestContext,
+        # removed in the mcp SDK 2.0; its own `mcp` extra only declares
+        # fastmcp>=3.3.0, which drifts to fastmcp 4.x -> mcp 2.x and
+        # breaks pydantic_ai.mcp at import time on fresh installs
+        "fastmcp<4",
+        "mcp<2",
         "plone.app.registry",
         "plone.restapi",
     ],

@@ -3,6 +3,12 @@ Changelog
 
 1.3-dev0 - (unreleased)
 ---------------------------
+* Fix: cap ``fastmcp<4`` and ``mcp<2`` — pydantic-ai 1.107.0 is
+  incompatible with the mcp SDK 2.x (``mcp.shared.context.RequestContext``
+  was removed) and its unpinned ``fastmcp>=3.3.0`` requirement drifted to
+  fastmcp 4.x -> mcp 2.x, breaking the ``pydantic_ai.mcp`` import on fresh
+  installs (issue #305021)
+
 1.3 - (unreleased)
 ---------------------------
 * Feature: multimodal prompts — enrichers can now contribute non-text
