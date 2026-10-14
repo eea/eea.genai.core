@@ -2,18 +2,66 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 import logging
 import os
 
 from plone.registry.interfaces import IRegistry
 from zope.component import getUtilitiesFor, queryUtility
+from zope.interface.interface import InterfaceClass
+from zope.schema import getFieldNames
 
 from eea.genai.core.interfaces import (
     IAgentConfiguration,
     IGenAISettings,
+    IGenAISettingsSection,
 )
 
 logger = logging.getLogger("eea.genai.core")
+
+GENAI_SETTINGS_PREFIX = IGenAISettings.__identifier__
+
+
+def get_settings_value(schema, name):
+    """Read a contributed setting, using its schema default before installation."""
+    registry = queryUtility(IRegistry)
+    if registry is None:
+        return schema[name].default
+    value = registry.get(f"{GENAI_SETTINGS_PREFIX}.{name}", None)
+    return schema[name].default if value is None else value
+
+
+@lru_cache(maxsize=32)
+def _combined_schema(schemas):
+    names = set()
+    for schema in schemas:
+        fields = set(getFieldNames(schema))
+        duplicates = names & fields
+        if duplicates:
+            raise ValueError(f"Duplicate GenAI settings fields: {sorted(duplicates)}")
+        names.update(fields)
+    return InterfaceClass(
+        "IGenAIControlpanelSettings", bases=schemas, __module__=__name__
+    )
+
+
+def get_controlpanel_schema():
+    """Compose the core and package schemas without changing registry keys."""
+    sections = sorted(getUtilitiesFor(IGenAISettingsSection))
+    return _combined_schema(
+        (IGenAISettings,) + tuple(section.schema for _, section in sections)
+    )
+
+
+def get_public_settings():
+    """Expose only the master switch and explicit package feature payloads."""
+    return {
+        "enabled": is_enabled(),
+        "features": {
+            name: section.get_public_settings()
+            for name, section in sorted(getUtilitiesFor(IGenAISettingsSection))
+        },
+    }
 
 
 def get_llm_provider(default: str = "openai-compatible") -> str:

@@ -263,6 +263,14 @@ API keys are **never stored in the registry** — they come from env vars only (
 
 Registry values override env vars. Empty registry values fall back to env vars.
 
+Package-specific settings are contributed by named `IGenAISettingsSection`
+utilities registered via standard ZCML. Both controlpanels compose those schemas
+with the core schema using the existing registry prefix; duplicate field names
+are rejected. Packages install their own records. Public `GET @genai-settings`
+returns only the master flag and explicitly allowlisted package feature payloads
+for frontend SSR, not administrative configuration. See
+[ADR 001](docs/ADR-001-settings-sections.md).
+
 ### Agent Configuration
 
 Agents are configured via `agents_json` in `IGenAISettings`:

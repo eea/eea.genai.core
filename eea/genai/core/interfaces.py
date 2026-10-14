@@ -187,6 +187,22 @@ class IGenAISettings(Interface):
     )
 
 
+class IGenAISettingsSection(Interface):
+    """Named utility contributing a settings schema to the GenAI controlpanel.
+
+    Register via ZCML and install the schema's registry records with the core
+    settings prefix. Field names must be unique across all sections.
+    """
+
+    schema = Attribute("Registry-backed schema for this section")
+
+    def get_public_settings():
+        """Return an explicitly allowlisted JSON-compatible feature payload.
+
+        Only include values safe to expose publicly and serialize into SSR HTML.
+        """
+
+
 class IAgentConfiguration(Interface):
     """Named utility providing a default agent configuration.
 

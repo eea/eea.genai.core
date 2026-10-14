@@ -58,6 +58,42 @@ Install
 - Add ``eea.genai.core`` to your ``requirements.txt``.
 - Install the GenericSetup profile to enable the control panel.
 
+Contributed settings and frontend flags
+======================================
+
+Packages can contribute a schema to the existing GenAI controlpanel by
+registering a named utility implementing ``IGenAISettingsSection``::
+
+    <utility
+        name="image"
+        factory=".settings.ImageAISettingsSection"
+        provides="eea.genai.core.interfaces.IGenAISettingsSection"
+    />
+
+The utility supplies a ``schema`` and ``get_public_settings()`` method. Both
+classic and REST controlpanels combine the contributed schemas with the core
+schema. Field names must be unique across sections. Each package installs its
+own records with the existing core prefix::
+
+    <records interface="my.package.interfaces.IMySettings"
+             prefix="eea.genai.core.interfaces.IGenAISettings" />
+
+This preserves existing core registry keys and avoids core depending on feature
+packages. Import newly contributed registry records before opening the extended
+controlpanel on an existing site. See ``docs/ADR-001-settings-sections.md`` for
+the storage decision.
+
+Public ``GET /@genai-settings`` returns only the master switch and explicit
+package feature payloads::
+
+    {"enabled": true, "features": {"image": {"enabled": false}}}
+
+``get_public_settings()`` must return only allowlisted, JSON-compatible values
+safe for anonymous reading and serialization into SSR HTML. Do not include
+provider configuration, prompts, MCP configuration, environment values, or
+credentials. Frontends must combine the master and feature switches. The
+administrative ``@controlpanels/genai`` endpoint remains separate.
+
 Environment variables
 =====================
 
