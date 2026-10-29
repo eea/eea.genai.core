@@ -1,11 +1,21 @@
 <configure
-  xmlns="http://namespaces.zope.org/zope">
+  xmlns="http://namespaces.zope.org/zope"
+  xmlns:plone="http://namespaces.plone.org/plone">
 
   <include package="plone.restapi" />
 
   <adapter
     factory=".controlpanel.GenAIRegistryControlpanel"
     name="genai"
+  />
+
+  <plone:service
+    method="GET"
+    factory=".settings.GenAISettingsGet"
+    for="Products.CMFPlone.interfaces.IPloneSiteRoot"
+    layer="eea.genai.core.interfaces.IEEAGenAICoreLayer"
+    permission="zope2.View"
+    name="@genai-settings"
   />
 
 </configure>

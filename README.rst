@@ -58,6 +58,42 @@ Install
 - Add ``eea.genai.core`` to your ``requirements.txt``.
 - Install the GenericSetup profile to enable the control panel.
 
+Contributed settings and frontend flags
+=======================================
+
+Packages can contribute a schema to the existing GenAI controlpanel by
+registering a named utility implementing ``IGenAISettingsSection``::
+
+    <utility
+        name="image"
+        factory=".settings.ImageAISettingsSection"
+        provides="eea.genai.core.interfaces.IGenAISettingsSection"
+    />
+
+The utility supplies a ``schema`` and ``get_public_settings()`` method. Both
+classic and REST controlpanels combine the contributed schemas with the core
+schema. Field names must be unique across sections. Each package installs its
+own records with the existing core prefix::
+
+    <records interface="my.package.interfaces.IMySettings"
+             prefix="eea.genai.core.interfaces.IGenAISettings" />
+
+This preserves existing core registry keys and avoids core depending on feature
+packages. Import newly contributed registry records before opening the extended
+controlpanel on an existing site. See ``docs/ADR-001-settings-sections.md`` for
+the storage decision.
+
+Public ``GET /@genai-settings`` returns only the master switch and explicit
+package feature payloads::
+
+    {"enabled": true, "features": {"image": {"enabled": false}}}
+
+``get_public_settings()`` must return only allowlisted, JSON-compatible values
+safe for anonymous reading and serialization into SSR HTML. Do not include
+provider configuration, prompts, MCP configuration, environment values, or
+credentials. Frontends must combine the master and feature switches. The
+administrative ``@controlpanels/genai`` endpoint remains separate.
+
 Environment variables
 =====================
 
@@ -134,3 +170,53 @@ The eea.genai.core is free software: you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the Free
 Software Foundation, either version 2 of the License, or (at your option) any
 later version.
+
+Secret Scanning
+===============
+
+This repository uses the Betterleaks GitHub Action to scan the current
+repository content on every push and pull request. The scan uses the rules in
+``.gitleaks.toml`` and uploads a ``betterleaks-report`` artifact when a finding
+is detected.
+
+If the optional SMTP secrets are configured, failed scans also send an email to
+the last commit committer. The workflow expects these repository or
+organization secrets:
+
+- ``SMTP_URL``
+- ``SMTP_PORT`` (optional, defaults to ``25``)
+- ``SMTP_EMAIL``
+- ``SMTP_PASSWORD`` (optional if the SMTP server does not require authentication)
+
+Port ``465`` is sent with direct TLS; other ports use the default SMTP
+handshake. The email includes a short finding summary from the redacted
+Betterleaks report, including the redacted matched line from each finding.
+
+There are three common outcomes:
+
+1. Everything is OK. The ``Betterleaks / Scan for secrets`` check is green and
+   no action is needed. Regular references to runtime values are OK, for example::
+
+     token_from_cookie = request.cookies.get("auth_token")
+
+2. A real secret was found. The check is red and the workflow log asks you to
+   download the ``betterleaks-report`` artifact. Open the artifact from the
+   GitHub Actions run and check the reported file, line and rule. Remove the
+   committed value, move it to the proper secret store, and rotate it if it was
+   exposed. A report entry looks like this::
+
+     {
+       "RuleID": "secret-literal-assignment",
+       "File": "src/config.py",
+       "StartLine": 12,
+       "Secret": "[REDACTED]"
+     }
+
+3. The finding is a false positive. Keep the value only if it is clearly not
+   sensitive, such as a test fixture, placeholder, or public example. Add
+   ``betterleaks:allow`` on the same line and include a short explanation in the
+   pull request::
+
+     test_password = "admin"  #betterleaks:allow
+
+Do not add ``betterleaks:allow`` to real credentials.
