@@ -1,8 +1,10 @@
 Changelog
 =========
 
-1.3-dev0 - (unreleased)
+1.3 - (2026-10-29)
 ---------------------------
+* Change: Multimodal enrichers, extensible settings sections, and SSR feature flags
+  [razvanMiu]
 * Feature: packages can contribute settings sections to both GenAI
   controlpanels through named ``IGenAISettingsSection`` utilities, without
   introducing package-specific dependencies into core.
@@ -15,7 +17,7 @@ Changelog
   fastmcp 4.x -> mcp 2.x, breaking the ``pydantic_ai.mcp`` import on fresh
   installs (issue #305021)
 
-1.3 - (unreleased)
+1.3 - (2026-10-29)
 ---------------------------
 * Feature: multimodal prompts — enrichers can now contribute non-text
   content parts (e.g. pydantic_ai ``ImageUrl``) to the agent's user
