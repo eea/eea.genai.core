@@ -59,7 +59,7 @@ Install
 - Install the GenericSetup profile to enable the control panel.
 
 Contributed settings and frontend flags
-======================================
+=======================================
 
 Packages can contribute a schema to the existing GenAI controlpanel by
 registering a named utility implementing ``IGenAISettingsSection``::
